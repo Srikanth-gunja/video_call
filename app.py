@@ -1,10 +1,12 @@
+import os
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, join_room, leave_room, emit
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "video-call-secret-key"
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "video-call-secret-key")
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Use eventlet for production; allow CORS for all origins
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 
 @app.route("/")
@@ -62,4 +64,15 @@ def on_ice_candidate(data):
 
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    # Get port from environment variable (Render sets this)
+    port = int(os.environ.get("PORT", 5000))
+    # Disable debug in production
+    debug = os.environ.get("FLASK_ENV") != "production"
+    
+    socketio.run(
+        app, 
+        host="0.0.0.0", 
+        port=port, 
+        debug=debug,
+        allow_unsafe_werkzeug=True  # Required for Render deployment
+    )
