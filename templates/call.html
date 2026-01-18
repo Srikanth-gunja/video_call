@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Call - {{ room_id }}</title>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        .header {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+        }
+        .room-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .room-name {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        .status {
+            font-size: 14px;
+            color: #4ecdc4;
+        }
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 60px);
+            padding: 20px;
+            gap: 20px;
+        }
+        .videos-container {
+            flex: 1;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            justify-content: center;
+        }
+        .video-wrapper {
+            background: #0f0f23;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+        .video-wrapper.remote {
+            flex: 1;
+            max-width: 70%;
+            aspect-ratio: 16/9;
+        }
+        .video-wrapper.local {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 240px;
+            height: 180px;
+            border: 3px solid #4ecdc4;
+            z-index: 10;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .video-label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+        }
+        .placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #666;
+            font-size: 16px;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+        }
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            transition: all 0.3s;
+        }
+        .control-btn.mute {
+            background: #4ecdc4;
+            color: white;
+        }
+        .control-btn.mute.active {
+            background: #ff6b6b;
+        }
+        .control-btn.video {
+            background: #45b7d1;
+            color: white;
+        }
+        .control-btn.video.active {
+            background: #ff6b6b;
+        }
+        .control-btn.hangup {
+            background: #ff6b6b;
+            color: white;
+        }
+        .control-btn:hover {
+            transform: scale(1.1);
+        }
+        .hidden {
+            display: none !important;
+        }
+        .connection-status {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(78, 205, 196, 0.9);
+            color: white;
+            padding: 10px 25px;
+            border-radius: 25px;
+            font-size: 14px;
+            z-index: 100;
+            display: none;
+        }
+        .connection-status.show {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        .error-message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 107, 107, 0.95);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 15px;
+            font-size: 16px;
+            z-index: 1000;
+            display: none;
+        }
+        .error-message.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="room-info">
+            <span>Code:</span>
+            <span class="room-name">{{ room_id }}</span>
+        </div>
+        <div class="status" id="status">Connecting...</div>
+    </div>
+
+    <div class="main-content">
+        <div class="videos-container">
+            <div class="video-wrapper remote">
+                <div class="video-label">Remote</div>
+                <video id="remoteVideo" autoplay playsinline></video>
+                <div class="placeholder" id="remotePlaceholder">
+                    Waiting for remote user...
+                </div>
+            </div>
+            <div class="video-wrapper local">
+                <div class="video-label">You</div>
+                <video id="localVideo" autoplay playsinline muted></video>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="control-btn mute" id="muteBtn" onclick="toggleAudio()" title="Toggle Microphone">
+                🎤
+            </button>
+            <button class="control-btn video" id="videoBtn" onclick="toggleVideo()" title="Toggle Camera">
+                📹
+            </button>
+            <button class="control-btn hangup" onclick="hangup()" title="End Call">
+                📞
+            </button>
+        </div>
+    </div>
+
+    <div class="connection-status" id="connectionStatus"></div>
+    <div class="error-message" id="errorMessage"></div>
+
+    <script>
+        const roomId = '{{ room_id }}';
+        const socket = io();
+        let localStream;
+        let remoteStream;
+        let peerConnection;
+        let isAudioEnabled = true;
+        let isVideoEnabled = true;
+
+        const iceServers = [
+            {
+                urls: "stun:free.expressturn.com:3478"
+            },
+            {
+                urls: "turn:free.expressturn.com:3478?transport=tcp",
+                username: "000000002083321464",
+                credential: "jD1BFh+5li2Jy0OQsBqlEwfLB+8="
+            }
+        ];
+
+        const pcConfig = {
+            iceServers: iceServers
+        };
+
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const remotePlaceholder = document.getElementById('remotePlaceholder');
+        const statusElement = document.getElementById('status');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const errorMessage = document.getElementById('errorMessage');
+
+        function showStatus(message, duration = 3000) {
+            connectionStatus.textContent = message;
+            connectionStatus.classList.add('show');
+            setTimeout(() => {
+                connectionStatus.classList.remove('show');
+            }, duration);
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.add('show');
+            setTimeout(() => {
+                errorMessage.classList.remove('show');
+            }, 5000);
+        }
+
+        async function initLocalStream() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: true
+                });
+                localVideo.srcObject = localStream;
+                statusElement.textContent = 'Ready';
+            } catch (error) {
+                console.error('Error accessing media devices:', error);
+                showError('Could not access camera/microphone. Please allow permissions.');
+            }
+        }
+
+        function createPeerConnection() {
+            peerConnection = new RTCPeerConnection(pcConfig);
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('ice_candidate', {
+                        room: roomId,
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            peerConnection.ontrack = (event) => {
+                console.log('Received remote track');
+                if (remoteVideo.srcObject !== event.streams[0]) {
+                    remoteVideo.srcObject = event.streams[0];
+                    remotePlaceholder.classList.add('hidden');
+                    statusElement.textContent = 'Connected';
+                    showStatus('Remote user connected!');
+                }
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                console.log('Connection state:', peerConnection.connectionState);
+                if (peerConnection.connectionState === 'disconnected') {
+                    statusElement.textContent = 'Disconnected';
+                    remotePlaceholder.classList.remove('hidden');
+                    remotePlaceholder.textContent = 'Remote user disconnected';
+                }
+            };
+
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+        }
+
+        async function createOffer() {
+            createPeerConnection();
+            try {
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                socket.emit('offer', {
+                    room: roomId,
+                    offer: offer
+                });
+            } catch (error) {
+                console.error('Error creating offer:', error);
+                showError('Error creating offer');
+            }
+        }
+
+        async function createAnswer(offer) {
+            createPeerConnection();
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                socket.emit('answer', {
+                    room: roomId,
+                    answer: answer
+                });
+            } catch (error) {
+                console.error('Error creating answer:', error);
+                showError('Error creating answer');
+            }
+        }
+
+        async function handleAnswer(answer) {
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+                showStatus('Connection established!');
+            } catch (error) {
+                console.error('Error handling answer:', error);
+                showError('Error handling answer');
+            }
+        }
+
+        async function handleIceCandidate(candidate) {
+            try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (error) {
+                console.error('Error adding ICE candidate:', error);
+            }
+        }
+
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            socket.emit('join', { room: roomId });
+        });
+
+        socket.on('user_joined', (data) => {
+            console.log('User joined:', data.user);
+            showStatus('User joined, connecting...');
+            createOffer();
+        });
+
+        socket.on('offer', async (data) => {
+            console.log('Received offer from:', data.user);
+            statusElement.textContent = 'Connecting...';
+            await createAnswer(data.offer);
+        });
+
+        socket.on('answer', async (data) => {
+            console.log('Received answer from:', data.user);
+            await handleAnswer(data.answer);
+        });
+
+        socket.on('ice_candidate', async (data) => {
+            console.log('Received ICE candidate from:', data.user);
+            await handleIceCandidate(data.candidate);
+        });
+
+        socket.on('user_left', (data) => {
+            console.log('User left:', data.user);
+            statusElement.textContent = 'User left';
+            remotePlaceholder.classList.remove('hidden');
+            remotePlaceholder.textContent = 'Remote user disconnected';
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            statusElement.textContent = 'Disconnected';
+        });
+
+        function toggleAudio() {
+            isAudioEnabled = !isAudioEnabled;
+            localStream.getAudioTracks().forEach(track => {
+                track.enabled = isAudioEnabled;
+            });
+            const muteBtn = document.getElementById('muteBtn');
+            muteBtn.classList.toggle('active', !isAudioEnabled);
+            muteBtn.textContent = isAudioEnabled ? '🎤' : '🔇';
+        }
+
+        function toggleVideo() {
+            isVideoEnabled = !isVideoEnabled;
+            localStream.getVideoTracks().forEach(track => {
+                track.enabled = isVideoEnabled;
+            });
+            const videoBtn = document.getElementById('videoBtn');
+            videoBtn.classList.toggle('active', !isVideoEnabled);
+            videoBtn.textContent = isVideoEnabled ? '📹' : '📷';
+        }
+
+        function hangup() {
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            socket.emit('leave', { room: roomId });
+            window.location.href = '/';
+        }
+
+        window.addEventListener('beforeunload', () => {
+            if (peerConnection) {
+                peerConnection.close();
+            }
+        });
+
+        initLocalStream();
+    </script>
+</body>
+</html>
