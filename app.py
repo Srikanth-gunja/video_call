@@ -1,6 +1,6 @@
 import os
-from flask import Flask, render_template
-from flask_socketio import SocketIO, join_room, leave_room, emit, request
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, join_room, leave_room, emit
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "video-call-secret-key")
