@@ -5,8 +5,8 @@ from flask_socketio import SocketIO, join_room, leave_room, emit
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "video-call-secret-key")
 
-# Use eventlet for production; allow CORS for all origins
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
+# Use default threading mode for production; allow CORS for all origins
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 
 @app.route("/")
